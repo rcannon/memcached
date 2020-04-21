@@ -31,13 +31,13 @@ class WorkloadGenerator {
     void fill_keys();
 
     double get_bl(std::string request, unsigned get_val_counter, 
-                  unsigned del_val_counter, unsigned set_val_counter);
-
-    void WarmCache();
+                  unsigned del_val_counter, unsigned set_val_counter); 
 
     unsigned get_index(int max);
 
   public:
+
+    void WarmCache();
 
     // run the setup of the vectors based on the inputs and specifications in notes.txt
     WorkloadGenerator(unsigned nsets, unsigned ngets, unsigned ndels,
@@ -50,5 +50,7 @@ class WorkloadGenerator {
 
     std::vector<double> baseline_latencies(unsigned nreq);
 
-    std::pair<double, double> baseline_performance(unsigned nreq);
+    std::vector<double> threaded_performance(unsigned nthreads, unsigned nreq);
+
+    std::pair<double, double> baseline_performance(unsigned nthreads, unsigned nreq);
 };

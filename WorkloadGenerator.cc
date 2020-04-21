@@ -2,6 +2,8 @@
 #include <cstring>
 #include <iostream>
 #include <algorithm>
+#include <thread>
+#include <mutex>
 #include "WorkloadGenerator.hh"
 
 
@@ -154,7 +156,6 @@ unsigned WorkloadGenerator::get_index(int max)
 // get requests
 double WorkloadGenerator::get_hit_rate()
 {
-  WarmCache();
   unsigned total = nsets_ + ngets_ + ndels_;
   unsigned max = keys_.size();
   unsigned get_val_index = 0;
@@ -216,7 +217,7 @@ WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigne
   else if (request == "get")
   {
     auto x = cache_.get(keys_.at((get_val_counter-1) % max), sizes_.at((get_val_counter-1) % max));
-    if (x != nullptr) delete[] x;
+    if (x != nullptr) delete[] x; // this is new memory that is allocated by cache_client when retruning a value, so it is safe to delete it after we have done comparisons.
   }
   else
   {
@@ -232,7 +233,6 @@ WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigne
 std::vector<double> 
 WorkloadGenerator::baseline_latencies(unsigned nreq)
 {
-  WarmCache();
   std::vector<double> res(nreq);
 
   unsigned total = nsets_ + num_warmups_;
@@ -255,10 +255,40 @@ WorkloadGenerator::baseline_latencies(unsigned nreq)
   return res;
 }
 
-// get the performance statistics based on latency vector returned above
-std::pair<double, double> WorkloadGenerator::baseline_performance(unsigned nreq)
+std::vector<double>
+WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq)
 {
-  auto res = baseline_latencies(nreq);
+  unsigned runs = nreq / nthreads;
+  auto best_mutex = std::mutex;
+  std::vector<double> big_res;
+  auto run_one_thread = [&]() 
+  {
+    std::vector<double> res = baseline_latencies(runs);
+    for (auto it = res.begin(); it != res.end(); ++it)
+    {
+      std::lock_guard guard(best_mutex);
+      big_res.push_back(*it);
+    }
+  };
+
+  std::vector<std::thread> threads;
+  for (unsigned i = 0; i < nthread; ++i) 
+  {
+    threads.push_back(std::thread(run_one_thread));
+  }
+
+  for (auto& t : threads) 
+  {
+    t.join();
+  }
+
+  return big_res;
+}
+
+// get the performance statistics based on latency vector returned above
+std::pair<double, double> WorkloadGenerator::baseline_performance(unsigned nthreads, unsigned nreq)
+{
+  auto res = threaded_perfromance(nthreads, nreq);
   std::sort(res.begin(), res.end(), std::greater<double>());
 
   unsigned idx = std::round(res.size() * 0.05);

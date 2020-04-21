@@ -11,8 +11,10 @@ int main()
   std::string port = "65413";
 
   WorkloadGenerator wg(nsets, ngets, ndels, warmups, server, port);
+  wg.WarmCache()
   auto hr = wg.get_hit_rate();
   std::cout << "hit rate: " << hr << std::endl;
+  wg.WarmCache()
   std::pair<double, double> res = wg.baseline_performance(1000000);
   std::cout << "95 percentile: " << res.first << std::endl;
   std::cout << "mean throughput: " << res.second << std::endl;
