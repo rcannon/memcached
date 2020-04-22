@@ -3,7 +3,6 @@
 #include <iostream>
 #include <algorithm>
 #include <thread>
-#include <mutex>
 #include "WorkloadGenerator.hh"
 
 
@@ -17,9 +16,9 @@ WorkloadGenerator::WorkloadGenerator(unsigned nsets, unsigned ngets, unsigned nd
     vals_(std::vector<Cache::val_type>()), 
     sizes_(std::vector<Cache::size_type>()), 
     requests_(std::vector<std::string>()),
-
     random_device_(std::random_device()), 
-    gen_(std::mt19937(random_device_()))
+    gen_(std::mt19937(random_device_())),
+    mutx_(std::mutex())
 {
   // easy condition check to simplify things
   assert(num_warmups_ < ngets_ + ndels_ + nsets_);
@@ -99,7 +98,7 @@ void WorkloadGenerator::fill_vals_and_sizes()
 // mimic nonlinear behavior of actual workload
 void WorkloadGenerator::fill_keys()
 {
-  std::geometric_distribution<int> length_dist(0.1); // probably change distributions later
+  std::geometric_distribution<int> length_dist(0.1); 
   static const std::string lookup_table = "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   std::uniform_int_distribution<int> lookup_dist(1, lookup_table.size()-1);
   std::geometric_distribution<int> repeat_dist(0.02);
@@ -126,14 +125,33 @@ void WorkloadGenerator::fill_keys()
   std::shuffle(keys_.begin(), keys_.end(), gen_);
 }
 
+key_type WorkloadGenerator::get_key(unsigned i) const
+{
+  //std::scoped_lock guard(mutx_);
+  return keys_.at(i);
+}
+
+Cache::val_type WorkloadGenerator::get_val(unsigned i) const
+{
+  //std::scoped_lock guard(mutx_);
+  return vals_.at(i);
+}
+
+std::string WorkloadGenerator::get_req(unsigned i) const
+{
+  //std::scoped_lock guard(mutx_);
+  return requests_.at(i);
+}
+
+
 // performance metrics are more representitive
 // if the cache is already warm
-void WorkloadGenerator::WarmCache()
+void WorkloadGenerator::WarmCache() const
 {
   cache_.reset();
   for (unsigned i = 0; i < num_warmups_; i++)
   {
-    cache_.set(keys_.at(i), vals_.at(i), sizes_.at(i));
+    cache_.set(get_key(i), get_val(i), sizes_.at(i));
   }
 }
 
@@ -141,7 +159,7 @@ void WorkloadGenerator::WarmCache()
 // request. More recently added keys are more 
 // likely to be chosen, to mimic temporal locality
 // of actual workload
-unsigned WorkloadGenerator::get_index(int max)
+unsigned WorkloadGenerator::get_index(int max) const
 {
   std::geometric_distribution<int> dist(0.001);
   int idx = dist(gen_)+1;
@@ -154,7 +172,7 @@ unsigned WorkloadGenerator::get_index(int max)
 // hit rate is the number of successful get
 // requests divided by the number of total 
 // get requests
-double WorkloadGenerator::get_hit_rate()
+double WorkloadGenerator::get_hit_rate() const
 {
   unsigned total = nsets_ + ngets_ + ndels_;
   unsigned max = keys_.size();
@@ -170,31 +188,31 @@ double WorkloadGenerator::get_hit_rate()
   for (unsigned i = 0; i < total; ++i)
   {
     if ((i % 100000) == 0) std::cout << i << std::endl;
-    if (requests_.at(i) == "get")
+    if (get_req(i) == "get")
     {
       get_val_index = get_index(set_val_counter);
 
-      key = keys_.at(get_val_index);
+      key = get_key(get_val_index);
       sz = sizes_.at(get_val_index);
       auto x = cache_.get(key, sz);
       if (x != nullptr)
       {
         std::string xp(x);
-        if (xp == std::string(vals_.at(get_val_index))) hit_rate = hit_rate + 1.;
+        if (xp == std::string(get_val(get_val_index))) hit_rate = hit_rate + 1.;
         delete[] x;
       } 
     }
-    else if (requests_.at(i) == "set")
+    else if (get_req(i) == "set")
     {
-      key = keys_.at(set_val_counter);
+      key = get_key(set_val_counter);
       sz = sizes_.at(set_val_counter);
-      va = vals_.at(set_val_counter);
+      va = get_val(set_val_counter);
       cache_.set(key, va , sz);
       set_val_counter = ((set_val_counter + 1) % max);
     }
     else
     {
-      key = keys_.at(del_val_counter);
+      key = get_key(del_val_counter);
       cache_.del(key);
       del_val_counter = (del_val_counter+1) % max;
     }
@@ -203,27 +221,48 @@ double WorkloadGenerator::get_hit_rate()
   return hit_rate;
 }
 
+
 // helper function to get the time taken by a single 
 // random request
 double
-WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigned del_val_counter, unsigned set_val_counter)
+WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigned del_val_counter, unsigned set_val_counter) const
 {
+  Cache::size_type sz;
+  key_type ky;
+  Cache::val_type vl;
   unsigned max = nsets_ + num_warmups_;
-  const auto start = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point start;
+  std::chrono::steady_clock::time_point end;
   if (request == "set")
   { 
-    cache_.set(keys_.at((set_val_counter-1) % max), vals_.at((set_val_counter-1) % max), sizes_.at((set_val_counter-1) % max));
+    ky = get_key((set_val_counter-1) % max);
+    sz = sizes_.at((set_val_counter-1) % max);
+    vl = get_val((set_val_counter-1) % max);
+    std::scoped_lock guard(mutx_);
+    start = std::chrono::steady_clock::now();
+    cache_.set(ky, vl, sz);
+    end = std::chrono::steady_clock::now();
   }
   else if (request == "get")
   {
-    auto x = cache_.get(keys_.at((get_val_counter-1) % max), sizes_.at((get_val_counter-1) % max));
+    unsigned idx = (get_val_counter-1) % max;
+    ky = get_key(idx);
+    sz = sizes_.at(idx);
+    std::scoped_lock guard(mutx_);
+    start = std::chrono::steady_clock::now();
+    auto x = cache_.get(ky, sz);
+    end = std::chrono::steady_clock::now();
     if (x != nullptr) delete[] x; // this is new memory that is allocated by cache_client when retruning a value, so it is safe to delete it after we have done comparisons.
   }
   else
   {
-    cache_.del(keys_.at((del_val_counter-1) % max));
+    ky = get_key((del_val_counter-1) % max);
+    std::scoped_lock guard(mutx_);
+    start = std::chrono::steady_clock::now();
+    cache_.del(ky);
+    end = std::chrono::steady_clock::now();
   }
-  const auto end = std::chrono::steady_clock::now();
+  //const auto end = std::chrono::steady_clock::now();
   auto time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1,1000>>>(end - start).count();
   return time;
 }
@@ -231,10 +270,10 @@ WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigne
 // construct a vector of latency times based on
 // repeated calls to get_bl above
 std::vector<double> 
-WorkloadGenerator::baseline_latencies(unsigned nreq)
+WorkloadGenerator::baseline_latencies(unsigned nreq) const
 {
   std::vector<double> res(nreq);
-
+  
   unsigned total = nsets_ + num_warmups_;
   unsigned get_val_index = 0;
   unsigned del_val_counter = 0;
@@ -244,8 +283,9 @@ WorkloadGenerator::baseline_latencies(unsigned nreq)
   double time;
   for (unsigned i = 0; i < nreq; i++)
   {
+    if ((i % 100000) == 0) std::cout << i << std::endl;
     j = i % total;
-    rq = requests_.at(j);
+    rq = get_req(j);
     if (rq == "get") get_val_index = get_index(set_val_counter);
     else if (rq == "set") set_val_counter++;
     else del_val_counter++;
@@ -256,23 +296,19 @@ WorkloadGenerator::baseline_latencies(unsigned nreq)
 }
 
 std::vector<double>
-WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq)
+WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq) const
 {
   unsigned runs = nreq / nthreads;
-  auto best_mutex = std::mutex;
   std::vector<double> big_res;
   auto run_one_thread = [&]() 
   {
     std::vector<double> res = baseline_latencies(runs);
-    for (auto it = res.begin(); it != res.end(); ++it)
-    {
-      std::lock_guard guard(best_mutex);
-      big_res.push_back(*it);
-    }
+    std::scoped_lock guard(mutx_);
+    big_res.insert(big_res.end(), res.begin(), res.end());
   };
 
   std::vector<std::thread> threads;
-  for (unsigned i = 0; i < nthread; ++i) 
+  for (unsigned i = 0; i < nthreads; ++i) 
   {
     threads.push_back(std::thread(run_one_thread));
   }
@@ -286,9 +322,10 @@ WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq)
 }
 
 // get the performance statistics based on latency vector returned above
-std::pair<double, double> WorkloadGenerator::baseline_performance(unsigned nthreads, unsigned nreq)
+std::pair<double, double> 
+WorkloadGenerator::baseline_performance(unsigned nthreads, unsigned nreq) const
 {
-  auto res = threaded_perfromance(nthreads, nreq);
+  auto res = threaded_performance(nthreads, nreq);
   std::sort(res.begin(), res.end(), std::greater<double>());
 
   unsigned idx = std::round(res.size() * 0.05);
