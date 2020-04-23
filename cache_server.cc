@@ -44,7 +44,7 @@ handle_request(
     http::request<http::string_body, http::basic_fields<Allocator>>&& req,
     Send&& send,
     std::shared_ptr<Cache> cache,
-    std::mutex mutx_)
+    std::mutex* mutx_)
 {
     // Returns a bad request response
     auto const bad_request =
@@ -68,7 +68,7 @@ handle_request(
       return send(bad_request("Unknown HTTP-method"));
 
     {
-      std::shared_lock guard(mutx_)
+      std::shared_lock guard(*mutx_)
       if (req.method() == http::verb::head)
       {
         http::response<http::string_body> res{http::status::ok, req.version()};
@@ -224,14 +224,14 @@ class session : public std::enable_shared_from_this<session>
     http::request<http::string_body> req_;
     std::shared_ptr<void> res_;
     send_lambda lambda_;
-    mutable std::mutex mutx_;
+    std::mutex* mutx_;
 
 public:
     // Take ownership of the stream
     session(
         tcp::socket&& socket,
         std::shared_ptr<Cache> cache,
-        std::mutex mutx)
+        std::mutex* mutx)
         : stream_(std::move(socket))
         , cache_(cache)
         , lambda_(*this)
@@ -334,14 +334,14 @@ class listener : public std::enable_shared_from_this<listener>
     std::shared_ptr<Cache> cache_;
     unsigned messages_sent_ = 0; // edits for purposes of valgrind tests
     unsigned MAX_MESSAGES_ = 5; //
-    mutable std::mutex mutx_;
+    mutable std::mutex* mutx_;
 
 public:
     listener(
         net::io_context& ioc,
         tcp::endpoint endpoint,
         std::shared_ptr<Cache> cache,
-        std::mutex mutx_)
+        std::mutex* mutx_)
         : ioc_(ioc)
         , acceptor_(net::make_strand(ioc))
         , cache_(cache)
@@ -473,7 +473,7 @@ int main(int argc, char** argv)
 
   auto cache = std::make_shared<Cache>(maxmem, 0.75, fifo);
 
-  std::mutex mutx;
+  std::make_shared<std::mutex> mutx;
 
   auto run_one_thread = [&]() 
   {
