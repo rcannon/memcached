@@ -43,7 +43,8 @@ void
 handle_request(
     http::request<http::string_body, http::basic_fields<Allocator>>&& req,
     Send&& send,
-    std::shared_ptr<Cache> cache)
+    std::shared_ptr<Cache> cache,
+    std::mutex mutx_)
 {
     // Returns a bad request response
     auto const bad_request =
@@ -66,102 +67,105 @@ handle_request(
       req.method() != http::verb::post)
       return send(bad_request("Unknown HTTP-method"));
 
-    if (req.method() == http::verb::head)
     {
-      http::response<http::string_body> res{http::status::ok, req.version()};
-      res.set(http::field::content_type, "application/json");
-      res.set(http::field::accept, "text/html");
-      auto used = std::to_string(cache->space_used());
-      res.set("Space-Used", used);
-      res.keep_alive(req.keep_alive());
-      return send(std::move(res));
-    }
-
-    // Respond to GET request
-    else if (req.method() == http::verb::get)
-    {
-      http::response<http::string_body> res{http::status::ok, req.version()};
-      res.set(http::field::content_type, "application/json");
-      res.set(http::field::accept, "text/html");
-      auto used = std::to_string(cache->space_used());
-      res.set("Space-Used", used);
-
-      key_type key = req.target().to_string().substr(1);
-      Cache::size_type size = 0;
-      auto got = cache->get(key, size);
-      if (got == nullptr){
-        res.result(http::status::not_found);
-        res.body() = "Key not in cache\n"; // or some other error message
-      } else {
-        res.body() = "{ \"key\" : \"" + key + "\", \"value\" : \"" + got + "\"}";
+      std::shared_lock guard(mutx_)
+      if (req.method() == http::verb::head)
+      {
+        http::response<http::string_body> res{http::status::ok, req.version()};
+        res.set(http::field::content_type, "application/json");
+        res.set(http::field::accept, "text/html");
+        auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
+        res.keep_alive(req.keep_alive());
+        return send(std::move(res));
       }
-      res.prepare_payload();
-      res.keep_alive(req.keep_alive());
-      return send(std::move(res));
-    }
 
+      // Respond to GET request
+      else if (req.method() == http::verb::get)
+      {
+        http::response<http::string_body> res{http::status::ok, req.version()};
+        res.set(http::field::content_type, "application/json");
+        res.set(http::field::accept, "text/html");
+        auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
 
-    else if (req.method() == http::verb::put)
-    {
-      // get the key-value pair
-      std::string kvp = req.target().to_string().substr(1);
-
-      // get the key
-      key_type key = kvp.substr(0, kvp.find("/"));
-
-      // get the value
-      const std::string strval = kvp.substr(kvp.find("/")+1);
-      const Cache::size_type size = strval.length()+1;
-      const auto sval = strval.c_str();
-      assert(size == (strlen(sval)+1));
-      auto val = new char[size];
-      std::copy(sval,sval+size, val);
-
-      cache->set(key, val, size);
-      delete[] val;
-      http::response<http::empty_body> res{http::status::ok, req.version()};
-      res.set(http::field::content_type, "application/json");
-      res.set(http::field::accept, "text/html");
-      auto used = std::to_string(cache->space_used());
-      res.set("Space-Used", used);
-      res.keep_alive(req.keep_alive());
-      return send(std::move(res));
-    }
-
-    else if (req.method() == http::verb::delete_)
-    {
-      key_type key = req.target().to_string();
-      key.erase(key.begin());
-      bool b = cache->del(key);
-      http::response<http::empty_body> res{http::status::ok, req.version()};
-      res.set(http::field::content_type, "application/json");
-      res.set(http::field::accept, "text/html");
-      auto used = std::to_string(cache->space_used());
-      res.set("Space-Used", used);
-      std::string strBool = "false";
-      if (b) strBool = "true";
-      res.set("Delete-Bool", strBool);
-      res.keep_alive(req.keep_alive());
-      return send(std::move(res));
-    }
-
-    else if (req.method() == http::verb::post)
-    // reset the cache
-    {
-      http::response<http::empty_body> res{http::status::not_found, req.version()};
-      if (req.target() == "/reset") 
-      { 
-        cache->reset();
-        res.result(http::status::ok);
+        key_type key = req.target().to_string().substr(1);
+        Cache::size_type size = 0;
+        auto got = cache->get(key, size);
+        if (got == nullptr){
+          res.result(http::status::not_found);
+          res.body() = "Key not in cache\n"; // or some other error message
+        } else {
+          res.body() = "{ \"key\" : \"" + key + "\", \"value\" : \"" + got + "\"}";
+        }
+        res.prepare_payload();
+        res.keep_alive(req.keep_alive());
+        return send(std::move(res));
       }
-      res.set(http::field::content_type, "application/json");
-      res.set(http::field::accept, "text/html");
-      auto used = std::to_string(cache->space_used());
-      res.set("Space-Used", used);
-      res.keep_alive(req.keep_alive());
-      return send(std::move(res));
+
+
+      else if (req.method() == http::verb::put)
+      {
+        // get the key-value pair
+        std::string kvp = req.target().to_string().substr(1);
+
+        // get the key
+        key_type key = kvp.substr(0, kvp.find("/"));
+
+        // get the value
+        const std::string strval = kvp.substr(kvp.find("/")+1);
+        const Cache::size_type size = strval.length()+1;
+        const auto sval = strval.c_str();
+        assert(size == (strlen(sval)+1));
+        auto val = new char[size];
+        std::copy(sval,sval+size, val);
+
+        cache->set(key, val, size);
+        delete[] val;
+        http::response<http::empty_body> res{http::status::ok, req.version()};
+        res.set(http::field::content_type, "application/json");
+        res.set(http::field::accept, "text/html");
+        auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
+        res.keep_alive(req.keep_alive());
+        return send(std::move(res));
+      }
+
+      else if (req.method() == http::verb::delete_)
+      {
+        key_type key = req.target().to_string();
+        key.erase(key.begin());
+        bool b = cache->del(key);
+        http::response<http::empty_body> res{http::status::ok, req.version()};
+        res.set(http::field::content_type, "application/json");
+        res.set(http::field::accept, "text/html");
+        auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
+        std::string strBool = "false";
+        if (b) strBool = "true";
+        res.set("Delete-Bool", strBool);
+        res.keep_alive(req.keep_alive());
+        return send(std::move(res));
+      }
+
+      else if (req.method() == http::verb::post)
+      // reset the cache
+      {
+        http::response<http::empty_body> res{http::status::not_found, req.version()};
+        if (req.target() == "/reset") 
+        { 
+          cache->reset();
+          res.result(http::status::ok);
+        }
+        res.set(http::field::content_type, "application/json");
+        res.set(http::field::accept, "text/html");
+        auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
+        res.keep_alive(req.keep_alive());
+        return send(std::move(res));
+      }
+      else { return send(bad_request("Do better next time")); }
     }
-    else { return send(bad_request("Do better next time")); }
 
 }
 
@@ -220,15 +224,18 @@ class session : public std::enable_shared_from_this<session>
     http::request<http::string_body> req_;
     std::shared_ptr<void> res_;
     send_lambda lambda_;
+    mutable std::mutex mutx_;
 
 public:
     // Take ownership of the stream
     session(
         tcp::socket&& socket,
-        std::shared_ptr<Cache> cache)
+        std::shared_ptr<Cache> cache,
+        std::mutex mutx)
         : stream_(std::move(socket))
         , cache_(cache)
         , lambda_(*this)
+        , mutx_(mutx)
     {
     }
 
@@ -278,7 +285,7 @@ public:
             return fail(ec, "read");
 
         // Send the response
-        handle_request(std::move(req_), lambda_, cache_);
+        handle_request(std::move(req_), lambda_, cache_, mutx_);
     }
 
     void
@@ -326,16 +333,19 @@ class listener : public std::enable_shared_from_this<listener>
     tcp::acceptor acceptor_;
     std::shared_ptr<Cache> cache_;
     unsigned messages_sent_ = 0; // edits for purposes of valgrind tests
-    unsigned MAX_MESSAGES_ = 5; // 
+    unsigned MAX_MESSAGES_ = 5; //
+    mutable std::mutex mutx_;
 
 public:
     listener(
         net::io_context& ioc,
         tcp::endpoint endpoint,
-        std::shared_ptr<Cache> cache)
+        std::shared_ptr<Cache> cache,
+        std::mutex mutx_)
         : ioc_(ioc)
         , acceptor_(net::make_strand(ioc))
         , cache_(cache)
+        , mutx_(mutx)
     {
         beast::error_code ec;
 
@@ -415,7 +425,8 @@ private:
             // Create the session and run it
             std::make_shared<session>(
                 std::move(socket),
-                cache_)->run();
+                cache_,
+                mutx_)->run();
             //} //don't forget this to un-comment } ******************
         }
 
@@ -456,15 +467,30 @@ int main(int argc, char** argv)
               << ", server: " << server
               << ", port: " << port << std::endl;
 
-  net::io_context ioc; // number of threads goes here {n}
+  net::io_context ioc(threads); // number of threads goes here {n}
 
   Evictor* fifo = new Fifo_Evictor();
 
   auto cache = std::make_shared<Cache>(maxmem, 0.75, fifo);
 
-  std::make_shared<listener>(ioc,
+  std::mutex mutx;
+
+  auto run_one_thread = [&]() 
+  {
+      std::make_shared<listener>(ioc,
                              tcp::endpoint{server, port},
-                             cache)->run();
+                             cache, mutx)->run();
+  };
+  std::vector<std::thread> threads;
+  for (unsigned i = 0; i < nthreads; ++i) 
+  {
+    threads.push_back(std::thread(run_one_thread));
+  }
+
+  for (auto& t : threads) 
+  {
+    t.join();
+  }
 
   ioc.run();
 
