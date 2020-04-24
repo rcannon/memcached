@@ -74,10 +74,8 @@ handle_request(
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        mutx.lock();
         const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
-        mutx.unlock();
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
       }
@@ -88,17 +86,20 @@ handle_request(
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        std::scoped_lock guard(mutx);
         const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
 
         key_type key = req.target().to_string().substr(1);
         Cache::size_type size = 0;
         const auto got = cache->get(key, size);
-        if (got == nullptr){
+        if (got == nullptr)
+        {
           res.result(http::status::not_found);
           res.body() = "Key not in cache\n"; // or some other error message
-        } else {
+        } 
+        else 
+        {
+          assert(got != nullptr);
           res.body() = "{ \"key\" : \"" + key + "\", \"value\" : \"" + got + "\"}";
         }
         res.prepare_payload();
@@ -130,27 +131,33 @@ handle_request(
         http::response<http::empty_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        std::scoped_lock guard(mutx);
+        
         const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
+
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
       }
 
       else if (req.method() == http::verb::delete_)
       {
-        key_type key = req.target().to_string();
-        key.erase(key.begin());
-        std::scoped_lock guard(mutx);
-        const bool b = cache->del(key);
         http::response<http::empty_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        const auto used = std::to_string(cache->space_used());
-        res.set("Space-Used", used);
-        std::string strBool = "false";
+
+        key_type key = req.target().to_string();
+        key.erase(key.begin());
+        std::string strBool;
+        {
+        std::scoped_lock guard(mutx);
+        const bool b = cache->del(key);
+        strBool = "false";
         if (b) strBool = "true";
         res.set("Delete-Bool", strBool);
+        }
+        const auto used = std::to_string(cache->space_used());
+        res.set("Space-Used", used);
+        
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
       }
@@ -167,7 +174,6 @@ handle_request(
         }
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        std::scoped_lock guard(mutx);
         auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
         res.keep_alive(req.keep_alive());
@@ -484,12 +490,11 @@ int main(int argc, char** argv)
 
   auto mutx = std::mutex();
 
-  /*auto run_one_thread = [&]() 
-  {*/
+
   std::make_shared<listener>(ioc,
                              tcp::endpoint{server, port},
                              cache, mutx)->run();
-  //};
+
   
   std::vector<std::thread> v;
   v.reserve(nthreads - 1);
@@ -500,17 +505,6 @@ int main(int argc, char** argv)
             ioc.run();
         });
   ioc.run();
-
-  /*std::vector<std::thread> threads;
-  for (int i = 0; i < nthreads; ++i) 
-  {
-    threads.push_back(std::thread(run_one_thread));
-  }
-
-  for (auto& t : threads) 
-  {
-    t.join();
-  }*/ 
 
   return 0;
 }

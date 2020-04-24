@@ -57,7 +57,7 @@ class WorkloadGenerator {
 
     std::vector<double> baseline_latencies(unsigned nreq) const;
 
-    std::vector<double> threaded_performance(unsigned nthreads, unsigned nreq) const;
+    std::pair<double,double> threaded_performance(unsigned nthreads, unsigned nreq) const;
 
-    std::pair<double, double> baseline_performance(unsigned nthreads, unsigned nreq) const;
+    std::pair<double, double> baseline_performance(unsigned nreq) const;
 };

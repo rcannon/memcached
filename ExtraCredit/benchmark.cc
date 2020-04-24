@@ -19,7 +19,7 @@ void doit(unsigned t)
   //auto hr = wg.get_hit_rate();
   //std::cout << "hit rate: " << hr << std::endl;
   wg.WarmCache();
-  std::pair<double, double> res = wg.baseline_performance(nthreads, nreq);
+  std::pair<double, double> res = wg.threaded_performance(nthreads, nreq);
   std::cout << "95 percentile: " << res.first << std::endl;
   std::cout << "mean throughput: " << res.second << std::endl;
 
@@ -27,7 +27,7 @@ void doit(unsigned t)
 
 int main()
 {
-  for (unsigned i = 2; i < 9; ++i)
+  for (unsigned i = 2; i < 3; ++i)
   {
     doit(i);
   }

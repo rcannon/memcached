@@ -269,11 +269,13 @@ WorkloadGenerator::get_bl(std::string request, unsigned get_val_counter, unsigne
 
 // construct a vector of latency times based on
 // repeated calls to get_bl above
-std::vector<double> 
+//
+// note: instead of returning a vector, we modify a vector passed as reference,
+// for the sake of speed
+std::vector<double>
 WorkloadGenerator::baseline_latencies(unsigned nreq) const
 {
   std::vector<double> res(nreq);
-  
   unsigned total = nsets_ + num_warmups_;
   unsigned get_val_index = 0;
   unsigned del_val_counter = 0;
@@ -289,13 +291,14 @@ WorkloadGenerator::baseline_latencies(unsigned nreq) const
     if (rq == "get") get_val_index = get_index(set_val_counter);
     else if (rq == "set") set_val_counter++;
     else del_val_counter++;
-    time = get_bl(rq, get_val_index, del_val_counter, set_val_counter);
-    res[i] = time;
+    time = get_bl(rq, get_val_index, del_val_counter, set_val_counter); 
+    res.at(i) = time;
   }
   return res;
 }
 
-std::vector<double>
+// Here is our multithreaded benchmark :)
+std::pair<double, double>
 WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq) const
 {
   unsigned runs = nreq / nthreads;
@@ -313,19 +316,29 @@ WorkloadGenerator::threaded_performance(unsigned nthreads, unsigned nreq) const
     threads.push_back(std::thread(run_one_thread));
   }
 
+  // get the time so we can calculate mean throughput
+  const auto start = std::chrono::steady_clock::now();
   for (auto& t : threads) 
   {
     t.join();
   }
-
-  return big_res;
+  const auto end = std::chrono::steady_clock::now();
+  double time = std::chrono::duration_cast<std::chrono::duration<double, std::ratio<1,1>>>(end - start).count();
+  double mean_throughput = big_res.size() / time;
+  
+  // get the 95% percetile latency
+  std::sort(big_res.begin(), big_res.end(), std::greater<double>());
+  unsigned idx = std::round(big_res.size() * 0.05);
+  double ninefive_percent = big_res.at(idx-1);
+  
+  return std::pair<double, double>(ninefive_percent, mean_throughput);
 }
 
-// get the performance statistics based on latency vector returned above
+// get the performance statistics based on latency vector returned above 
 std::pair<double, double> 
-WorkloadGenerator::baseline_performance(unsigned nthreads, unsigned nreq) const
+WorkloadGenerator::baseline_performance(unsigned nreq) const
 {
-  auto res = threaded_performance(nthreads, nreq);
+  auto res = baseline_latencies(nreq);
   std::sort(res.begin(), res.end(), std::greater<double>());
 
   unsigned idx = std::round(res.size() * 0.05);
