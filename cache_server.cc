@@ -22,6 +22,7 @@
 #include <functional>
 #include <memory>
 #include <thread>
+#include <mutex>
 #include <vector>
 #include <string.h>
 #include <cassert>
@@ -44,7 +45,7 @@ handle_request(
     http::request<http::string_body, http::basic_fields<Allocator>>&& req,
     Send&& send,
     std::shared_ptr<Cache> cache,
-    std::mutex* mutx_)
+    std::mutex& mutx)
 {
     // Returns a bad request response
     auto const bad_request =
@@ -68,14 +69,15 @@ handle_request(
       return send(bad_request("Unknown HTTP-method"));
 
     {
-      std::shared_lock guard(*mutx_)
       if (req.method() == http::verb::head)
       {
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        auto used = std::to_string(cache->space_used());
+        mutx.lock();
+        const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
+        mutx.unlock();
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
       }
@@ -86,12 +88,13 @@ handle_request(
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        auto used = std::to_string(cache->space_used());
+        std::scoped_lock guard(mutx);
+        const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
 
         key_type key = req.target().to_string().substr(1);
         Cache::size_type size = 0;
-        auto got = cache->get(key, size);
+        const auto got = cache->get(key, size);
         if (got == nullptr){
           res.result(http::status::not_found);
           res.body() = "Key not in cache\n"; // or some other error message
@@ -119,13 +122,16 @@ handle_request(
         assert(size == (strlen(sval)+1));
         auto val = new char[size];
         std::copy(sval,sval+size, val);
-
+        {
+        std::scoped_lock guard(mutx);
         cache->set(key, val, size);
+        }
         delete[] val;
         http::response<http::empty_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        auto used = std::to_string(cache->space_used());
+        std::scoped_lock guard(mutx);
+        const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
@@ -135,11 +141,12 @@ handle_request(
       {
         key_type key = req.target().to_string();
         key.erase(key.begin());
-        bool b = cache->del(key);
+        std::scoped_lock guard(mutx);
+        const bool b = cache->del(key);
         http::response<http::empty_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        auto used = std::to_string(cache->space_used());
+        const auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
         std::string strBool = "false";
         if (b) strBool = "true";
@@ -154,11 +161,13 @@ handle_request(
         http::response<http::empty_body> res{http::status::not_found, req.version()};
         if (req.target() == "/reset") 
         { 
+          std::scoped_lock guard(mutx);
           cache->reset();
           res.result(http::status::ok);
         }
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
+        std::scoped_lock guard(mutx);
         auto used = std::to_string(cache->space_used());
         res.set("Space-Used", used);
         res.keep_alive(req.keep_alive());
@@ -224,14 +233,14 @@ class session : public std::enable_shared_from_this<session>
     http::request<http::string_body> req_;
     std::shared_ptr<void> res_;
     send_lambda lambda_;
-    std::mutex* mutx_;
+    std::mutex& mutx_;
 
 public:
     // Take ownership of the stream
     session(
         tcp::socket&& socket,
         std::shared_ptr<Cache> cache,
-        std::mutex* mutx)
+        std::mutex& mutx)
         : stream_(std::move(socket))
         , cache_(cache)
         , lambda_(*this)
@@ -334,14 +343,14 @@ class listener : public std::enable_shared_from_this<listener>
     std::shared_ptr<Cache> cache_;
     unsigned messages_sent_ = 0; // edits for purposes of valgrind tests
     unsigned MAX_MESSAGES_ = 5; //
-    mutable std::mutex* mutx_;
+    std::mutex& mutx_;
 
 public:
     listener(
         net::io_context& ioc,
         tcp::endpoint endpoint,
         std::shared_ptr<Cache> cache,
-        std::mutex* mutx_)
+        std::mutex& mutx)
         : ioc_(ioc)
         , acceptor_(net::make_strand(ioc))
         , cache_(cache)
@@ -440,7 +449,7 @@ private:
 int main(int argc, char** argv)
 {
   Cache::size_type maxmem = 10; 
-  int threads = 1;
+  int nthreads = 1;
   unsigned short port = 65413; 
   auto server = net::ip::make_address("127.0.0.1");
   int opt;
@@ -458,31 +467,42 @@ int main(int argc, char** argv)
       port = static_cast<unsigned short>(std::atoi(optarg));
       break;
     case 't':
-      threads = std::atoi(optarg);
+      nthreads = std::atoi(optarg);
       break;
     }
   }
   std::cout << "maxmem: " << maxmem 
-              << ", threads: " << threads
+              << ", threads: " << nthreads
               << ", server: " << server
               << ", port: " << port << std::endl;
 
-  net::io_context ioc(threads); // number of threads goes here {n}
+  net::io_context ioc{nthreads}; // number of threads goes here {n}
 
   Evictor* fifo = new Fifo_Evictor();
 
   auto cache = std::make_shared<Cache>(maxmem, 0.75, fifo);
 
-  std::make_shared<std::mutex> mutx;
+  auto mutx = std::mutex();
 
-  auto run_one_thread = [&]() 
-  {
-      std::make_shared<listener>(ioc,
+  /*auto run_one_thread = [&]() 
+  {*/
+  std::make_shared<listener>(ioc,
                              tcp::endpoint{server, port},
                              cache, mutx)->run();
-  };
-  std::vector<std::thread> threads;
-  for (unsigned i = 0; i < nthreads; ++i) 
+  //};
+  
+  std::vector<std::thread> v;
+  v.reserve(nthreads - 1);
+  for(auto i = nthreads - 1; i > 0; --i)
+        v.emplace_back(
+        [&ioc]
+        {
+            ioc.run();
+        });
+  ioc.run();
+
+  /*std::vector<std::thread> threads;
+  for (int i = 0; i < nthreads; ++i) 
   {
     threads.push_back(std::thread(run_one_thread));
   }
@@ -490,9 +510,7 @@ int main(int argc, char** argv)
   for (auto& t : threads) 
   {
     t.join();
-  }
-
-  ioc.run();
+  }*/ 
 
   return 0;
 }

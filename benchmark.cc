@@ -27,7 +27,7 @@ void doit(unsigned t)
 
 int main()
 {
-  for (unsigned i = 1; i < 9; ++i)
+  for (unsigned i = 2; i < 9; ++i)
   {
     doit(i);
   }
