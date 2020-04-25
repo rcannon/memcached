@@ -17,8 +17,9 @@ WorkloadGenerator::WorkloadGenerator(unsigned nsets, unsigned ngets, unsigned nd
     sizes_(std::vector<Cache::size_type>()), 
     requests_(std::vector<std::string>()),
     random_device_(std::random_device()), 
-    gen_(std::mt19937(random_device_())),
-    mutx_(std::mutex()), total_(nsets + num_warmups)
+    total_(nsets + num_warmups),
+    gen_(std::mt19937(random_device_()))
+
 {
   // easy condition check to simplify things
   assert(num_warmups_ < ngets_ + ndels_ + nsets_);
@@ -155,7 +156,7 @@ Cache::size_type WorkloadGenerator::get_size(unsigned i) const
 
 // performance metrics are more representitive
 // if the cache is already warm
-void WorkloadGenerator::WarmCache() const
+void WorkloadGenerator::WarmCache()
 {
   cache_.reset();
   for (unsigned i = 0; i < num_warmups_; i++)
@@ -168,14 +169,6 @@ void WorkloadGenerator::WarmCache() const
 // request. More recently added keys are more 
 // likely to be chosen, to mimic temporal locality
 // of actual workload
-unsigned WorkloadGenerator::get_index(int max) const
-{
-  std::geometric_distribution<int> dist(0.001);
-  int idx = dist(gen_)+1;
-  idx = std::min(idx, max);
-  assert((max - idx) >= 0);
-  return (max - idx);
-}
 
 unsigned WorkloadGenerator::get_total() const
 {
@@ -190,4 +183,9 @@ unsigned WorkloadGenerator::get_req_size() const
 unsigned WorkloadGenerator::get_num_warmups() const
 {
   return num_warmups_;
+}
+
+unsigned WorkloadGenerator::get_ngets() const
+{
+  return ngets_;
 }

@@ -10,6 +10,19 @@
 // it as an argument
 std::mutex mutx;
 
+static std::random_device rd;
+static thread_local std::mt19937 gen(rd());
+
+unsigned get_index(int max)
+{
+  std::geometric_distribution<int> dist(0.001);
+  int idx = dist(gen)+1;
+  idx = std::min(idx, max);
+  assert((max - idx) >= 0);
+  return (max - idx);
+}
+
+
 // hit rate is the number of successful get
 // requests divided by the number of total 
 // get requests
@@ -30,7 +43,7 @@ double get_hit_rate(WorkloadGenerator& wg, Cache& cache)
     if ((i % 100000) == 0) std::cout << i << std::endl;
     if (wg.get_req(i) == "get")
     {
-      get_val_index = wg.get_index(set_val_counter);
+      get_val_index = get_index(set_val_counter);
 
       key = wg.get_key(get_val_index);
       sz = wg.get_size(get_val_index);
@@ -42,7 +55,7 @@ double get_hit_rate(WorkloadGenerator& wg, Cache& cache)
         delete[] x;
       } 
     }
-    else if (get_req(i) == "set")
+    else if (wg.get_req(i) == "set")
     {
       key = wg.get_key(set_val_counter);
       sz = wg.get_size(set_val_counter);
@@ -57,7 +70,7 @@ double get_hit_rate(WorkloadGenerator& wg, Cache& cache)
       del_val_counter = (del_val_counter+1) % max;
     }
   }
-  hit_rate = hit_rate / ngets_;
+  hit_rate = hit_rate / wg.get_ngets();
   return hit_rate;
 }
 
@@ -88,6 +101,7 @@ get_bl(std::string request, unsigned get_val_counter, unsigned del_val_counter, 
     ky = wg.get_key(idx);
     sz = wg.get_size(idx);
     //std::scoped_lock guard(mutx);
+    //std::cout << "key: " << ky << ", size: " << sz << std::endl;
     start = std::chrono::steady_clock::now();
     auto x = cache.get(ky, sz);
     end = std::chrono::steady_clock::now();
@@ -127,7 +141,7 @@ baseline_latencies(unsigned nreq, WorkloadGenerator& wg, Cache& cache)
     if ((i % 100000) == 0) std::cout << i << std::endl;
     j = i % total;
     rq = wg.get_req(j);
-    if (rq == "get") get_val_index = wg.get_index(set_val_counter);
+    if (rq == "get") get_val_index = get_index(set_val_counter);
     else if (rq == "set") set_val_counter++;
     else del_val_counter++;
     time = get_bl(rq, get_val_index, del_val_counter, set_val_counter, wg, cache); 
@@ -138,12 +152,12 @@ baseline_latencies(unsigned nreq, WorkloadGenerator& wg, Cache& cache)
 
 // Here is our multithreaded benchmark :)
 std::pair<double, double>
-threaded_performance(unsigned nthreads, unsigned nreq, std::string server, std::string port)
+threaded_performance(unsigned nthreads, unsigned nreq, WorkloadGenerator& wg, std::string server, std::string port)
 {
   unsigned runs = nreq / nthreads;
   std::vector<double> big_res;
 
-  auto run_one_thread = [&](unsigned i) 
+  auto run_one_thread = [&]() 
   {
     Cache cache(server, port);
     std::vector<double> res = baseline_latencies(runs, wg, cache);
@@ -154,7 +168,7 @@ threaded_performance(unsigned nthreads, unsigned nreq, std::string server, std::
   std::vector<std::thread> threads;
   for (unsigned i = 0; i < nthreads; ++i) 
   {
-    threads.push_back(std::thread(run_one_thread, i));
+    threads.push_back(std::thread(run_one_thread));
   }
 
   // get the time so we can calculate mean throughput
@@ -183,17 +197,17 @@ void doit(unsigned t)
   unsigned warmups = 50000 / t;
   std::string server = "127.0.0.1";
   std::string port = "65413";
-  unsigned nreq = 1000000;
+  unsigned nreq = 100000;
   unsigned nthreads = t;
   std::cout << "THREADS: " << nthreads << std::endl;
 
 
-  //WorkloadGenerator wg(nsets, ngets, ndels, warmups, server, port);
+  WorkloadGenerator wg(nsets, ngets, ndels, warmups, server, port);
   //wg.WarmCache();
   //auto hr = get_hit_rate(wg, Cache(server, port));
   //std::cout << "hit rate: " << hr << std::endl;
-  //wg.WarmCache();
-  std::pair<double, double> res = threaded_performance(nthreads, nreq, server, port);
+  wg.WarmCache();
+  std::pair<double, double> res = threaded_performance(nthreads, nreq, wg, server, port);
   std::cout << "95 percentile: " << res.first << std::endl;
   std::cout << "mean throughput: " << res.second << std::endl;
 }

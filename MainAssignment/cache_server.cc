@@ -44,7 +44,7 @@ void
 handle_request(
     http::request<http::string_body, http::basic_fields<Allocator>>&& req,
     Send&& send,
-    std::shared_ptr<Cache> cache,
+    Cache& cache,
     std::mutex& mutx)
 {
     // Returns a bad request response
@@ -74,7 +74,7 @@ handle_request(
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        const auto used = std::to_string(cache->space_used());
+        const auto used = std::to_string(cache.space_used());
         res.set("Space-Used", used);
         res.keep_alive(req.keep_alive());
         return send(std::move(res));
@@ -86,12 +86,12 @@ handle_request(
         http::response<http::string_body> res{http::status::ok, req.version()};
         res.set(http::field::content_type, "application/json");
         res.set(http::field::accept, "text/html");
-        const auto used = std::to_string(cache->space_used());
+        const auto used = std::to_string(cache.space_used());
         res.set("Space-Used", used);
 
         key_type key = req.target().to_string().substr(1);
         Cache::size_type size = 0;
-        const auto got = cache->get(key, size);
+        const auto got = cache.get(key, size);
         if (got == nullptr)
         {
           res.result(http::status::not_found);
@@ -484,9 +484,9 @@ int main(int argc, char** argv)
 
   net::io_context ioc{nthreads}; // number of threads goes here {n}
 
-  Evictor* fifo = new Fifo_Evictor();
+  //Evictor* fifo = new Fifo_Evictor();
 
-  auto cache = std::make_shared<Cache>(maxmem, 0.75, fifo);
+  auto cache = std::make_shared<Cache>(maxmem, 0.75);
 
   auto mutx = std::mutex();
 
