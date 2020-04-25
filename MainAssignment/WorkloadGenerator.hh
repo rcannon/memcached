@@ -8,7 +8,7 @@
 #include <mutex>
 #include "cache.hh"
 
-using ctime_type = std::chrono::duration<double,std::chrono::milliseconds>;
+//using ctime_type = std::chrono::duration<double,std::chrono::milliseconds>;
 
 class WorkloadGenerator {
   private:
@@ -24,6 +24,7 @@ class WorkloadGenerator {
     std::random_device random_device_;
     mutable std::mt19937 gen_;
     mutable std::mutex mutx_;
+    const unsigned total_;
 
     void fill_requests();
 
@@ -31,33 +32,24 @@ class WorkloadGenerator {
 
     void fill_keys();
 
-    double get_bl(std::string request, unsigned get_val_counter, 
-                  unsigned del_val_counter, unsigned set_val_counter) const; 
-
-    unsigned get_index(int max) const;
-
-    key_type get_key(unsigned i) const;
-
-    Cache::val_type get_val(unsigned i) const;
-
-    std::string get_req(unsigned i) const;
-
   public:
-
-    void WarmCache() const;
-
-    // run the setup of the vectors based on the inputs and specifications in notes.txt
+ 
     WorkloadGenerator(unsigned nsets, unsigned ngets, unsigned ndels,
                       unsigned num_warmups, std::string host, std::string port);
 
-    ~WorkloadGenerator(); // need to delete the vals in vals_
+    ~WorkloadGenerator();
 
+    void WarmCache() const;
 
-    double get_hit_rate() const; // returns the hit rate of the cache
+    // these functions allow limited extrnal access (read only) to private data
+    key_type get_key(unsigned i) const;
+    Cache::val_type get_val(unsigned i) const;
+    std::string get_req(unsigned i) const;
+    unsigned get_total() const;
+    Cache::size_type get_size(unsigned i) const;
+    unsigned get_req_size() const;
+    unsigned get_num_warmups() const;
 
-    std::vector<double> baseline_latencies(unsigned nreq) const;
+    unsigned get_index(int max) const;
 
-    std::pair<double,double> threaded_performance(unsigned nthreads, unsigned nreq) const;
-
-    std::pair<double, double> baseline_performance(unsigned nreq) const;
 };
