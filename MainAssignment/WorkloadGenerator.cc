@@ -149,7 +149,7 @@ std::string WorkloadGenerator::get_req(unsigned i) const
 
 Cache::size_type WorkloadGenerator::get_size(unsigned i) const
 {
-  unsigned j = i % requests_.size();
+  unsigned j = i % sizes_.size();
   return sizes_.at(j);
 }
 

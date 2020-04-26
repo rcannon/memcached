@@ -14,7 +14,9 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
+#include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <boost/asio/strand.hpp>
 #include <boost/config.hpp>
 #include <boost/beast/http/fields.hpp>
@@ -89,13 +91,7 @@ handle_request(
 
         key_type key = req.target().to_string().substr(1);
         Cache::size_type size = 0;
-
-        // We add a mutex lock here because this improves the performance
-        // on averge, although lowers the performance in the best case. We attempt
-        // fix this in the extra credit
-        mutx.lock();
         const auto got = cache.get(key, size);
-        mutx.unlock();
         if (got == nullptr)
         {
           res.result(http::status::not_found);
@@ -404,7 +400,11 @@ public:
     void
     run()
     {
-        do_accept();
+        net::dispatch(
+            acceptor_.get_executor(),
+            beast::bind_front_handler(
+                &listener::do_accept,
+                this->shared_from_this()));
     }
 
 private:
@@ -486,16 +486,22 @@ int main(int argc, char** argv)
   net::io_context ioc{nthreads}; // number of threads goes here {n}
 
   //Evictor* fifo = new Fifo_Evictor();
-  
-
   Cache cache(maxmem, 0.75);
-
-  auto mutx = std::mutex();
 
 
   std::make_shared<listener>(ioc,
                              tcp::endpoint{server, port},
                              cache)->run();
+
+  net::signal_set signals(ioc, SIGINT, SIGTERM);
+  signals.async_wait(
+        [&](beast::error_code const&, int)
+        {
+            // Stop the `io_context`. This will cause `run()`
+            // to return immediately, eventually destroying the
+            // `io_context` and all of the sockets in it.
+            ioc.stop();
+        });
 
   
   std::vector<std::thread> v;
@@ -507,6 +513,9 @@ int main(int argc, char** argv)
             ioc.run();
         });
   ioc.run();
+
+  for(auto& t : v)
+        t.join();
 
   return 0;
 }
