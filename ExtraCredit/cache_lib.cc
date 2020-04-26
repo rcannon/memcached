@@ -9,6 +9,8 @@
 #include <iostream>
 #include "cache.hh"
 #include "fifo_evictor.hh"
+#include <mutex>
+#include <thread>
 
 class Cache::Impl 
 {
@@ -19,6 +21,8 @@ class Cache::Impl
     Evictor* evictor_;
     const Cache::hash_func hasher_;
     std::unordered_map<key_type, std::pair<Cache::val_type, Cache::size_type>, Cache::hash_func> tbl_;
+    std::mutex data_lock_;
+    std::mutex touch_lock_;
   public:
 
     Impl(Cache::size_type maxmem,
@@ -40,7 +44,8 @@ Cache::Impl::Impl(Cache::size_type maxmem,
         Evictor* evictor,
         Cache::hash_func hasher)
         : maxmem_(maxmem), remmem_(maxmem), max_load_factor_(max_load_factor), 
-          evictor_(evictor), hasher_(hasher), tbl_(5, hasher_)
+          evictor_(evictor), hasher_(hasher), tbl_(5, hasher_),
+          data_lock_(std::mutex()), touch_lock_(std::mutex())
 {
   tbl_.max_load_factor(max_load_factor_);
 }
@@ -87,28 +92,42 @@ Cache::~Cache(){}
 void 
 Cache::Impl::set(key_type key, Cache::val_type val, Cache::size_type size)
 {
-  assert(key != ""); /* key cant be empty string */
-  del(key); // prevents unnecessary eviction in the case of an overwrite.
   if (size > maxmem_) return; 
-  if (remmem_ - size < 0)
+  assert(key != ""); /* key can't be empty string */
+  del(key); // prevents unnecessary eviction in the case of an overwrite.
   {
-    if (evictor_ == nullptr) return;
-    else
+    std::scoped_lock guard(data_lock_);
+    if (remmem_ - size < 0)
     {
-      key_type evictKey;
-      while (remmem_ - size < 0)
+      if (evictor_ == nullptr) return;
+      else
       {
-        evictKey = evictor_->evict();
-        if (evictKey != "") del(evictKey); 
+        key_type evictKey;
+        while (remmem_ - size < 0)
+        {
+          evictKey = evictor_->evict();
+          if (evictKey != "") {
+            val = tbl_.find(evictKey);
+            if (val != tbl_.end()){
+              auto size = val->second.second;
+              delete[] val->second.first;
+              tbl_.erase(key);
+              remmem_ += size;
+            }
+          }
+        }
       }
     }
+    Cache::byte_type* theVal = new Cache::byte_type[size]; /*assumes user includes space for 0 termination if passing a string */
+    std::copy(val,val+size, theVal);
+    tbl_[key] = std::make_pair(theVal,size);
+    remmem_ -= size;
   }
-  Cache::byte_type* theVal = new Cache::byte_type[size]; /*assumes user includes space for 0 termination if passing a string */
-  std::copy(val,val+size, theVal);
-  tbl_[key] = std::make_pair(theVal,size);
-  remmem_ -= size;
   if (!evictor_) return;
-  evictor_->touch_key(key);
+  {
+    std::scoped_lock guard(touch_lock_);
+    evictor_->touch_key(key);
+  }
   return;
 }
 
@@ -119,11 +138,17 @@ Cache::Impl::set(key_type key, Cache::val_type val, Cache::size_type size)
 Cache::val_type
 Cache::Impl::get(key_type key, Cache::size_type& val_size) const
 {
-  if (tbl_.find(key) == tbl_.end()) return nullptr;
-  std::pair res = tbl_.at(key);
-  if (evictor_) evictor_->touch_key(key);
-  val_size = res.second;
-  return res.first;
+  auto val = tbl_.find(key);
+  if (val == tvl_.end()) return nullptr;
+  // if (tbl_.find(key) == tbl_.end()) return nullptr;
+  // std::pair res = tbl_.at(key);
+  // if (evictor_) evictor_->touch_key(key);
+  if (evictor_) {
+    std::scoped_lock guard(touch_lock_);
+    evictor_touch_key(key);
+  }
+  val_size = val->second->second;
+  return val->second->first;
 }
 
 
@@ -131,17 +156,23 @@ Cache::Impl::get(key_type key, Cache::size_type& val_size) const
 bool 
 Cache::Impl::del(key_type key)
 {
-  auto val = tbl_.find(key);
-  if (val == tbl_.end()) return false;
-  auto size = val->second.second;
-  delete[] val->second.first;
-  if (tbl_.erase(key))
   {
+    std::scoped_lock guard(data_lock_);
+    auto val = tbl_.find(key);
+    if (val == tbl_.end()) return false;
+    auto size = val->second.second;
+    delete[] val->second.first;
+    tbl_.erase(key);
     remmem_ += size;
-    assert(remmem_ <= maxmem_);
-    return true;
   }
-  return false; 
+  return true;
+  // if (tbl_.erase(key))
+  // {
+  //   remmem_ += size;
+  //   assert(remmem_ <= maxmem_);
+  //   return true;
+  // }
+  // return false; 
 }
 
   // Compute the total amount of memory used up by all cache values (not keys)
@@ -155,12 +186,15 @@ Cache::Impl::space_used() const
 void
 Cache::Impl::reset()
 {
-  for (auto it = tbl_.begin(); it != tbl_.end(); it++)
   {
-    delete[] it->second.first;
+    std::scoped_lock guard(data_lock_);
+    for (auto it = tbl_.begin(); it != tbl_.end(); it++)
+    {
+      delete[] it->second.first;
+    }
+    tbl_.clear();
+    remmem_ = maxmem_;
   }
-  tbl_.clear();
-  remmem_ = maxmem_;
   return;
 }
 
