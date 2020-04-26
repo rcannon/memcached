@@ -109,10 +109,10 @@ Cache::Impl::set(key_type key, Cache::val_type val, Cache::size_type size)
           if (evictKey != "") {
             val = tbl_.find(evictKey);
             if (val != tbl_.end()){
-              auto size = val->second.second;
+              auto evictSize = val->second.second;
               delete[] val->second.first;
               tbl_.erase(key);
-              remmem_ += size;
+              remmem_ += evictSize;
             }
           }
         }
