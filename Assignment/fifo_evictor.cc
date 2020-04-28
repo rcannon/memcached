@@ -4,12 +4,18 @@
  */
 
 #include "fifo_evictor.hh"
+#include <thread>
+#include <mutex>
 #include <cassert>
+
+Fifo_Evictor::Fifo_Evictor()
+  : mutx_(std::mutex()) {}
  
 // pushes key onto back of queue
 void
 Fifo_Evictor::touch_key(const key_type& key)
 {
+  std::scoped_lock guard(mutx_);
   keyq_.push(key);
 }
 
@@ -20,6 +26,7 @@ Fifo_Evictor::evict()
   key_type x = "";
   if (keyq_.empty()) return x;
   x = keyq_.front();
+  std::scoped_lock guard(mutx_);
   keyq_.pop();
   return x;
 }

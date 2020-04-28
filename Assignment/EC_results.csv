@@ -1,0 +1,41 @@
+2 Server Threads,,,4 Server Threads,
+Mean_Throughput,,,Mean_Throughput,
+Num_Client_Threads, Mean_Throughput,,Num_Client_Threads,ÊMean_Throughput
+2,1075.08,,2,588.654
+3,1163.4,,3,629.566
+4,1232.04,,4,770.343
+5,1291.3,,5,766.479
+6,1229.69,,6,829.608
+7,1092.27,,7,831.376
+8,1153.62,,8,811.028
+,,,,
+Mean_Throughput,,,,
+Num_Client_Threads, 95th_Per,,Ê95th_Per,Ê95th_Per
+2,2.68112,,2,4.112
+3,3.98594,,3,5.38644
+4,3.04502,,4,5.25222
+5,3.52851,,5,5.57613
+6,4.47186,,6,4.13698
+7,4.58428,,7,4.22595
+8,4.71321,,8,5.5824
+,,,,
+3 Server Threads,,,,
+Mean_Throughput,,,,
+Num_Client_Threads, Mean_Throughput,,,
+2,743.265,,,
+3,834.724,,,
+4,949.365,,,
+5,995.49,,,
+6,966.02,,,
+7,989.003,,,
+8,993.891,,,
+,,,,
+Mean_Throughput,,,,
+Num_Client_Threads, 95th_Per,,,
+2,3.65265,,,
+3,4.02506,,,
+4,3.71613,,,
+5,4.34739,,,
+6,4.65061,,,
+7,4.41635,,,
+8,4.39776,,,

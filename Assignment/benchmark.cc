@@ -191,10 +191,10 @@ threaded_performance(unsigned nthreads, unsigned nreq, WorkloadGenerator& wg, st
 
 void doit(unsigned t)
 {
-  unsigned nsets = 0;
-  unsigned ndels = 0;
-  unsigned ngets = 70000;
-  unsigned warmups = 50000 / t;
+  unsigned nsets = 290000;
+  unsigned ndels = 10000;
+  unsigned ngets = 700000;
+  unsigned warmups = 50000;
   std::string server = "127.0.0.1";
   std::string port = "65413";
   unsigned nreq = 100000;
@@ -214,7 +214,7 @@ void doit(unsigned t)
 
 int main()
 {
-  for (unsigned i = 2; i < 3; ++i)
+  for (unsigned i = 2; i < 9; ++i)
   {
     doit(i);
   }

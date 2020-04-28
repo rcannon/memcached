@@ -1,5 +1,5 @@
 CXX=g++-8
-CXXFLAGS=-Wall -Wextra -pedantic -Werror -std=c++17 -O3 
+CXXFLAGS=-Wall -Wextra -pedantic -Werror -std=c++17 -g -O0 
 LDFLAGS=$(CXXFLAGS)
 LIBS=-pthread
 OBJ=$(SRC:.cc=.o)
