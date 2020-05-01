@@ -18,6 +18,8 @@ We can identify our saturation point as being at 1-3 client threads, with our ma
 
 Note: For these test, we tried our best to multithread the server, but judging from the cpu usage of our server, we were not very successful at achieving concurrent access to the cache for get requests (Eitan said that the server alone should achieve close to 200% cpu utilization, we were not able to even get it close to 100%). Some performance improvement is shown for 2 server threads. It is possible that this is casued by the server being able to utilize the multithreading during other parts of the computation, just not the cache accessing part. Using gdb we confirmed that the server was utilizing multiple threads; we just couldn't get performance or the cpu utilization up to the levels that we had hoped.
 
+Also, we realized too late that we neglected to test an instance where the number of client threads is 1. We only did 2 through 8. 
+
 In this section we run the same test as above, varying client threads from 2 to 8. We report the results for three different values of server threads: 2,3, and 4. We only test lower numbers of server threads because we are running both the server and the client on the same system, so they are competing for CPU resources. The plot for 2 server threads can be seen below. The exact results can be seen in part2_results.csv.
 
 First the results from running the server with two threads.
@@ -26,7 +28,7 @@ First the results from running the server with two threads.
 
 ![95thVsThreads2](/Plots/95thPlot2.png "95thLatency2")
 
-We can see from these plots that the saturation point for two server threads is when there are four client threads sending requests. The maximum unsaturated mean throughput is 1347 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 3.33 milliseconds (client threads = 1). This is a clear improvement over the single threaded server, and improvement in throughput of 40% (from basseline 963 requests per second).
+We can see from these plots that the saturation point for two server threads is when there are four client threads sending requests. The maximum unsaturated mean throughput is 1347 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 3.33 milliseconds (client threads = 2). This is a clear improvement over the single threaded server, and improvement in throughput of 40% (from basseline 963 requests per second).
 
 We next ran the tests with 3 server threads. The results can be seen in the plots below.
 
@@ -34,7 +36,7 @@ We next ran the tests with 3 server threads. The results can be seen in the plot
 
 ![95thVsThreads3](/Plots/95thPlot4.png "95thLatency2")
 
-These plots tell us that the server become saturated immediately, with a single client thread giving the only unsatuated throughput. The maximum unsaturated mean throughput is 972 requests per second (when client threads = 1), and the minimum unsaturated 95th percentile latency is 3.33 milliseconds (client threads = 1). This is on par the baseline results in terms of throughput but worse in terms of 95th-latency. It is alsoworse than our results from 2 server threads. The fact that the server first become saturaed at 2 client threads suggests that the 2 client threads and 3 server threads are competing for cpu resources (there are only 4 physical cores).
+These plots tell us that the server become saturated immediately, with a single client thread giving the only unsatuated throughput. The maximum unsaturated mean throughput is 972 requests per second (when client threads = 2), and the minimum unsaturated 95th percentile latency is 3.33 milliseconds (client threads = 2). This is on par the baseline results in terms of throughput but worse in terms of 95th-latency. It is alsoworse than our results from 2 server threads. The fact that the server first become saturaed at 2 client threads suggests that the 2 client threads and 3 server threads are competing for cpu resources (there are only 4 physical cores).
 
 Finally, we ran the tests with 4 server threads. The results can be seen in the plots below.
 
@@ -42,9 +44,11 @@ Finally, we ran the tests with 4 server threads. The results can be seen in the 
 
 ![95thVsThreads4](/Plots/95thPlot4.png "95thLatency2")
 
-We can see from these plots that the saturation point for two server threads is when there are four client threads sending requests. The maximum unsaturated mean throughput is 852 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 3.66 milliseconds (client threads = 1). This is clearly worse than the baseline and our results for 2 and 3 server threads. The low performance suggests that the client and server threads are competing too much for resourses (like the cache) for the computation to be done quickly, despite the throughput having an upward trend cient threads = 2,3,4.
+We can see from these plots that the saturation point for two server threads is when there are four client threads sending requests. The maximum unsaturated mean throughput is 852 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 3.66 milliseconds (client threads = 2). This is clearly worse than the baseline and our results for 2 and 3 server threads. The low performance suggests that the client and server threads are competing too much for resourses (like the cache) for the computation to be done quickly, despite the throughput having an upward trend cient threads = 2,3,4.
 
 # Extra Credit
+
+Here also, we realized too late that we neglected to test an instance where the number of client threads is 1. We only did 2 through 8. 
 
 Despite our inability to full multithread the server, we attempt to enhance it by modifying the cache that our server is running. The results are shown below. The exact results can be seen in EC_results.csv. We begin with our results for two server threads.
 
@@ -52,7 +56,7 @@ Despite our inability to full multithread the server, we attempt to enhance it b
 
 ![ec95thVsThreads2](/ExtraCreditPlots/EC_95thPlot2.png "ec95thLatency2")
 
-We can see from these plots that the saturation point for two server threads is when there are five client threads sending requests. The maximum unsaturated mean throughput is 1291 requests per second (when client threads = 5), and the minimum unsaturated 95th percentile latency is 2.68 milliseconds (client threads = 1). This is a clear improvement over the single threaded server, but interestingly the performance is worse than our results in part 2, despite saturating later. The later saturation could be due to the finer graining, since the two server threads can do more on the computation concurrently. The overall slower throughput is possibly due to the inconsistency with which my laptop is plugged in to power, which could be throttling cpu performance.
+We can see from these plots that the saturation point for two server threads is when there are three client threads sending requests. The maximum unsaturated mean throughput is 1226 requests per second (when client threads = 3), and the minimum unsaturated 95th percentile latency is 2.53 milliseconds (client threads = 2). This is a clear improvement over the single threaded server, but interestingly the performance is worse than our results in part 2. The overall slower throughput is possibly due to the inconsistency with which my laptop is plugged in to power, which could be throttling cpu performance.
 
 We next test 3 server threads. 
 
@@ -60,7 +64,7 @@ We next test 3 server threads.
 
 ![ec95thVsThreads2](/ExtraCreditPlots/EC_95thPlot3.png "ec95thLatency3")
 
-We can see from these plots that the saturation point for two server threads is when there are 4 client threads sending requests. The maximum unsaturated mean throughput is 949 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 3.65 milliseconds (client threads = 1). This is only slightly worse than our baseline results in terms of thoughput, but much worse in terms of latency. This is also slightly worse than our results before moving to finer grained locking. Perhaps our "enhancement" didn't actually make things better. 
+We can see from these plots that the saturation point for three server threads is when there is 1 client threads sending requests. The maximum unsaturated mean throughput is 906 requests per second (when client threads = 2), and the minimum unsaturated 95th percentile latency is 2.61 milliseconds (client threads = 2). This is worse than our baseline results in terms of thoughput as well as latency. This is also worse than our results before moving to finer grained locking. Perhaps our "enhancement" didn't actually make things better. 
 
 Finally, we test 4 server threads.
 
@@ -68,6 +72,8 @@ Finally, we test 4 server threads.
 
 ![ec95thVsThreads2](/ExtraCreditPlots/EC_95thPlot4.png "ec95thLatency4")
 
-We can see from these plots that the saturation point for two server threads is when there are 4 client threads sending requests. The maximum unsaturated mean throughput is 770 requests per second (when client threads = 4), and the minimum unsaturated 95th percentile latency is 4.11 milliseconds (client threads = 1). This is significantly worse than our baseline result, as well as any previous result. It strongly suggests that our modification of cache_lib by making more finer grained lead to worse performance. 
+We can see from these plots that the saturation point for four server threads is when there are 3 client threads sending requests. The maximum unsaturated mean throughput is 863 requests per second (when client threads = 3), and the minimum unsaturated 95th percentile latency is 2.7 milliseconds (client threads = 2). This is significantly worse than our baseline result, but ever so slightly better than the result in the last test of part 2, in terms of throughput. It is significantly better than the last test in part two with regard to latency. 
 
-Overall Our best result was with an unmodified cache_lib, 2 server threads, and 2 client threads.
+It is interesting that the server reaches saturation with these modifications to the cache than with just the course grained multithreading of the server, as well as having lower performance in all but the last test. It seems plausible that the lower overall performance could be due to the fact that, with finer graining, there are more scoped_lock guards that need to be initialized and destructed (as opposed to just one in the cache_server, resulting in more overall overhead and lowering performance.  
+
+Overall our best result was with an unmodified cache_lib, 2 server threads, and 2 client threads.

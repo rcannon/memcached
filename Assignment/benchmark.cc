@@ -197,7 +197,7 @@ void doit(unsigned t)
   unsigned warmups = 50000;
   std::string server = "127.0.0.1";
   std::string port = "65413";
-  unsigned nreq = 100000;
+  unsigned nreq = 1000000;
   unsigned nthreads = t;
   std::cout << "THREADS: " << nthreads << std::endl;
 
