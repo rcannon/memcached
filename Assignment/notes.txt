@@ -1,3 +1,0 @@
-Notes on Memcached paper and parameters:
-
-
